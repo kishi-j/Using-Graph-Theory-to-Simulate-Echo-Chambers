@@ -12,9 +12,11 @@ def generate_graph():
     p_in = 0.15
     p_out = 0.005
 
-    probs = [[p_in, p_out, p_out],
-             [p_out, p_in, p_out],
-             [p_out, p_out, p_in]]
+    probs = [
+        [p_in, p_out, p_out],
+        [p_out, p_in, p_out],
+        [p_out, p_out, p_in],
+    ]
 
     return nx.stochastic_block_model(sizes, probs, seed=42)
 
@@ -35,11 +37,10 @@ def update_opinions(G, opinions, alpha=0.5, epsilon=0.25):
 
         if len(neighbors) == 0:
             new_opinions[u] = opinions[u]
-            continue
-
-        neigh_avg = np.mean([opinions[v] for v in neighbors])
-
-        new_opinions[u] = (1 - alpha) * opinions[u] + alpha * neigh_avg
+        else:
+            new_opinions[u] = (1 - alpha) * opinions[u] + alpha * np.mean(
+                [opinions[v] for v in neighbors]
+            )
 
     return new_opinions
 
@@ -73,13 +74,42 @@ def run_experiment2(steps=150, save_every=15, alpha=0.5, epsilon=0.25):
     Q_values, r_values, t_values = [], [], []
 
     fig, ax = plt.subplots(figsize=(6, 6))
+    fig.patch.set_facecolor("black")
+
+    def draw_graph(ax, pos, Q, r, t):
+        ax.clear()
+        ax.set_facecolor("black")
+        fig.patch.set_facecolor("black")
+
+        nx.draw_networkx_edges(
+            G,
+            pos,
+            ax=ax,
+            edge_color="white",
+            width=0.6,
+            alpha=0.7
+        )
+
+        nx.draw_networkx_nodes(
+            G,
+            pos,
+            ax=ax,
+            node_color=[opinions[n] for n in G.nodes()],
+            cmap="coolwarm",
+            vmin=-1,
+            vmax=1,
+            node_size=50
+        )
+
+        ax.set_title(
+            f"Step {t} | Q={Q:.3f} | r={r:.3f}",
+            color="white"
+        )
+
+        ax.set_axis_off()
 
     def update(t):
-        nonlocal opinions, pos
-
-        ax.clear()
-
-        opinions = update_opinions(G, opinions, alpha, epsilon)
+        nonlocal pos, opinions
 
         Q = compute_modularity(G)
         r = compute_assortativity(G, opinions)
@@ -88,66 +118,83 @@ def run_experiment2(steps=150, save_every=15, alpha=0.5, epsilon=0.25):
         r_values.append(r)
         t_values.append(t)
 
-        print(f"Step {t:03d} | Q = {Q:.4f} | r = {r:.4f}")
+        opinions = update_opinions(G, opinions, alpha, epsilon)
+
+        pos = nx.spring_layout(G, pos=pos, iterations=3, seed=t)
+
+        draw_graph(ax, pos, Q, r, t)
 
         if t % save_every == 0 or t == steps - 1:
-            plt.figure(figsize=(6, 6))
+            fig_save, ax_save = plt.subplots(figsize=(6, 6))
+            fig_save.patch.set_facecolor("black")
+            ax_save.set_facecolor("black")
 
-            nx.draw(
+            nx.draw_networkx_edges(
                 G,
                 pos,
+                ax=ax_save,
+                edge_color="white",
+                width=0.6,
+                alpha=0.7
+            )
+
+            nx.draw_networkx_nodes(
+                G,
+                pos,
+                ax=ax_save,
                 node_color=[opinions[n] for n in G.nodes()],
                 cmap="coolwarm",
                 vmin=-1,
                 vmax=1,
-                node_size=50,
-                edge_color="lightgray",
-                width=0.4
+                node_size=50
             )
 
-            plt.title(f"Experiment 2 | Step {t} | Q = {Q:.3f} | r = {r:.3f}")
-            plt.axis("off")
+            ax_save.set_title(
+                f"Step {t} | Q={Q:.3f} | r={r:.3f}",
+                color="white"
+            )
 
-            plt.savefig(f"results/exp2_frames/frame_{t:04d}.png",
-                        bbox_inches="tight",
-                        dpi=150)
-            plt.close()
+            ax_save.set_axis_off()
 
-        pos = nx.spring_layout(G, pos=pos, iterations=3, seed=t)
+            plt.savefig(
+                f"results/exp2_frames/frame_{t:04d}.png",
+                dpi=150,
+                facecolor="black",
+                bbox_inches="tight"
+            )
 
-        nx.draw(
-            G,
-            pos,
-            node_color=[opinions[n] for n in G.nodes()],
-            cmap="coolwarm",
-            vmin=-1,
-            vmax=1,
-            node_size=50,
-            edge_color="lightgray",
-            width=0.4,
-            ax=ax
-        )
-
-        ax.set_title(f"Experiment 2 | Step {t} | Q = {Q:.3f} | r = {r:.3f}")
+            plt.close(fig_save)
 
     ani = animation.FuncAnimation(fig, update, frames=steps, interval=100)
 
-    ani.save("results/exp2_bounded.gif", writer="pillow", fps=10)
+    ani.save(
+        "results/exp2_static_moving.gif",
+        writer="pillow",
+        fps=10,
+        savefig_kwargs={"facecolor": "black"}
+    )
+
     plt.close()
-    
-    plt.figure(figsize=(7, 4))
 
-    plt.plot(t_values, Q_values, label="Q(t)")
-    plt.plot(t_values, r_values, label="r(t)")
+    # FINAL METRICS PLOT (IDENTICAL STYLE TO EXP 1)
+    fig2, ax2 = plt.subplots(figsize=(7, 4))
+    fig2.patch.set_facecolor("black")
+    ax2.set_facecolor("black")
 
-    plt.xlabel("Time step")
-    plt.ylabel("Value")
-    plt.title("Experiment 2")
-    plt.legend()
-    plt.grid(True)
+    ax2.plot(t_values, Q_values, label="Q(t)")
+    ax2.plot(t_values, r_values, label="r(t)")
+
+    ax2.set_xlabel("Time step", color="white")
+    ax2.set_ylabel("Value", color="white")
+    ax2.set_title("Experiment 2", color="white")
+
+    ax2.tick_params(colors="white")
+
+    ax2.legend()
+    ax2.grid(True)
 
     plt.tight_layout()
-    plt.savefig("results/exp2_Q_r.png", dpi=200)
+    plt.savefig("results/exp2_Q_r.png", dpi=200, facecolor="black")
     plt.show()
 
     print("Experiment 2 complete")

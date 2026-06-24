@@ -12,9 +12,11 @@ def generate_graph():
     p_in = 0.15
     p_out = 0.005
 
-    probs = [[p_in, p_out, p_out],
-             [p_out, p_in, p_out],
-             [p_out, p_out, p_in]]
+    probs = [
+        [p_in, p_out, p_out],
+        [p_out, p_in, p_out],
+        [p_out, p_out, p_in],
+    ]
 
     return nx.stochastic_block_model(sizes, probs, seed=42)
 
@@ -48,18 +50,48 @@ def run_experiment1(steps=150, save_every=15):
     G = generate_graph()
     opinions = initialize_opinions(G)
 
-    rng = np.random.default_rng(0)
-
     pos = nx.spring_layout(G, seed=42)
 
     Q_values, r_values, t_values = [], [], []
 
     fig, ax = plt.subplots(figsize=(6, 6))
+    fig.patch.set_facecolor("black")
+
+    def draw_graph(ax, pos, Q, r, t):
+        ax.clear()
+        ax.set_facecolor("black")
+        fig.patch.set_facecolor("black")
+
+        # EDGES FIRST (behind nodes)
+        nx.draw_networkx_edges(
+            G,
+            pos,
+            ax=ax,
+            edge_color="white",
+            width=0.6,
+            alpha=0.7
+        )
+
+        # NODES SECOND (on top of edges)
+        nx.draw_networkx_nodes(
+            G,
+            pos,
+            ax=ax,
+            node_color=[opinions[n] for n in G.nodes()],
+            cmap="coolwarm",
+            vmin=-1,
+            vmax=1,
+            node_size=50
+        )
+
+        ax.set_title(
+            f"Step {t} | Q={Q:.3f} | r={r:.3f}",
+            color="white"
+        )
+        ax.set_axis_off()
 
     def update(t):
         nonlocal pos
-
-        ax.clear()
 
         Q = compute_modularity(G)
         r = compute_assortativity(G, opinions)
@@ -68,66 +100,61 @@ def run_experiment1(steps=150, save_every=15):
         r_values.append(r)
         t_values.append(t)
 
-        print(f"Step {t:03d} | Q = {Q:.4f} | r = {r:.4f}")
+        print(f"Step {t:03d} | Q={Q:.4f} | r={r:.4f}")
 
-        if t % save_every == 0 or t == 149:
-            plt.figure(figsize=(6, 6))
+        pos = nx.spring_layout(G, pos=pos, iterations=3, seed=t)
 
-            nx.draw(
+        draw_graph(ax, pos, Q, r, t)
+
+        if t % save_every == 0 or t == steps - 1:
+            fig_save, ax_save = plt.subplots(figsize=(6, 6))
+            fig_save.patch.set_facecolor("black")
+            ax_save.set_facecolor("black")
+
+            nx.draw_networkx_edges(
                 G,
                 pos,
+                ax=ax_save,
+                edge_color="white",
+                width=0.6,
+                alpha=0.7
+            )
+
+            nx.draw_networkx_nodes(
+                G,
+                pos,
+                ax=ax_save,
                 node_color=[opinions[n] for n in G.nodes()],
                 cmap="coolwarm",
                 vmin=-1,
                 vmax=1,
-                node_size=50,
-                edge_color="lightgray",
-                width=0.4
+                node_size=50
             )
 
-            plt.title(f"Experiment 1 | Step {t} | Q = {Q:.3f} | r = {r:.3f}")
-            plt.axis("off")
+            ax_save.set_title(
+                f"Step {t} | Q={Q:.3f} | r={r:.3f}",
+                color="white"
+            )
+            ax_save.set_axis_off()
 
-            plt.savefig(f"results/exp1_frames/frame_{t:04d}.png",
-                        bbox_inches="tight",
-                        dpi=150)
-            plt.close()
-
-        pos = nx.spring_layout(G, pos=pos, iterations=3, seed=t)
-
-        nx.draw(
-            G,
-            pos,
-            node_color=[opinions[n] for n in G.nodes()],
-            cmap="coolwarm",
-            vmin=-1,
-            vmax=1,
-            node_size=50,
-            edge_color="lightgray",
-            width=0.4,
-            ax=ax
-        )
-
-        ax.set_title(f"Experiment 1 | Step {t} | Q = {Q:.3f} | r = {r:.3f}")
+            plt.savefig(
+                f"results/exp1_frames/frame_{t:04d}.png",
+                dpi=150,
+                facecolor="black",
+                bbox_inches="tight"
+            )
+            plt.close(fig_save)
 
     ani = animation.FuncAnimation(fig, update, frames=steps, interval=100)
 
-    ani.save("results/exp1_static_moving.gif", writer="pillow", fps=10)
+    ani.save(
+        "results/exp1_static_moving.gif",
+        writer="pillow",
+        fps=10,
+        savefig_kwargs={"facecolor": "black"}
+    )
+
     plt.close()
-
-    plt.figure(figsize=(7, 4))
-    plt.plot(t_values, Q_values, label="Q(t)")
-    plt.plot(t_values, r_values, label="r(t)")
-
-    plt.xlabel("Time step")
-    plt.ylabel("Value")
-    plt.title("Experiment 1")
-    plt.legend()
-    plt.grid(True)
-
-    plt.tight_layout()
-    plt.savefig("results/exp1_Q_r.png", dpi=200)
-    plt.show()
 
     print("Experiment 1 complete")
 

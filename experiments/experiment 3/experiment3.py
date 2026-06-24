@@ -12,9 +12,11 @@ def generate_graph():
     p_in = 0.15
     p_out = 0.005
 
-    probs = [[p_in, p_out, p_out],
-             [p_out, p_in, p_out],
-             [p_out, p_out, p_in]]
+    probs = [
+        [p_in, p_out, p_out],
+        [p_out, p_in, p_out],
+        [p_out, p_out, p_in],
+    ]
 
     return nx.stochastic_block_model(sizes, probs, seed=42)
 
@@ -52,9 +54,9 @@ def rewire_edges(G, opinions, rewire_frac=0.08, threshold=0.25, rng=None):
         return
 
     n_rewire = max(1, int(len(edges) * rewire_frac))
-    candidates = rng.choice(len(edges), size=min(n_rewire, len(edges)), replace=False)
+    idxs = rng.choice(len(edges), size=min(n_rewire, len(edges)), replace=False)
 
-    for idx in candidates:
+    for idx in idxs:
         u, v = edges[idx]
 
         if G.degree[u] > 1 and G.degree[v] > 1:
@@ -64,19 +66,11 @@ def rewire_edges(G, opinions, rewire_frac=0.08, threshold=0.25, rng=None):
                 nodes = list(G.nodes())
                 rng.shuffle(nodes)
 
-                reconnected = False
-
                 for w in nodes:
                     if w != u and not G.has_edge(u, w):
                         if abs(opinions[u] - opinions[w]) < threshold:
                             G.add_edge(u, w)
-                            reconnected = True
                             break
-
-                if not reconnected:
-                    w = rng.choice(nodes)
-                    if w != u:
-                        G.add_edge(u, w)
 
 
 def run_experiment3(steps=150, save_every=15):
@@ -89,13 +83,46 @@ def run_experiment3(steps=150, save_every=15):
     Q_values, r_values, t_values = [], [], []
 
     fig, ax = plt.subplots(figsize=(6, 6))
+    fig.patch.set_facecolor("black")
 
     rng = np.random.default_rng(0)
 
-    def update(t):
-        nonlocal pos
-
+    def draw_graph(ax, pos, Q, r, t):
         ax.clear()
+        ax.set_facecolor("black")
+        fig.patch.set_facecolor("black")
+
+        # EDGES FIRST
+        nx.draw_networkx_edges(
+            G,
+            pos,
+            ax=ax,
+            edge_color="white",
+            width=0.6,
+            alpha=0.7
+        )
+
+        # NODES SECOND (same colormap as Exp 1 & 2)
+        nx.draw_networkx_nodes(
+            G,
+            pos,
+            ax=ax,
+            node_color=[opinions[n] for n in G.nodes()],
+            cmap="coolwarm",
+            vmin=-1,
+            vmax=1,
+            node_size=50
+        )
+
+        ax.set_title(
+            f"Step {t} | Q={Q:.3f} | r={r:.3f}",
+            color="white"
+        )
+
+        ax.set_axis_off()
+
+    def update(t):
+        nonlocal pos, opinions
 
         rewire_edges(G, opinions, rng=rng)
 
@@ -108,64 +135,81 @@ def run_experiment3(steps=150, save_every=15):
 
         print(f"Step {t:03d} | Q = {Q:.4f} | r = {r:.4f}")
 
-        if t % save_every == 0 or t == steps - 1:
-            plt.figure(figsize=(6, 6))
+        pos = nx.spring_layout(G, pos=pos, iterations=3, seed=t)
 
-            nx.draw(
+        draw_graph(ax, pos, Q, r, t)
+
+        # SAME FRAME SAVE STYLE AS EXP 1/2
+        if t % save_every == 0 or t == steps - 1:
+            fig_save, ax_save = plt.subplots(figsize=(6, 6))
+            fig_save.patch.set_facecolor("black")
+            ax_save.set_facecolor("black")
+
+            nx.draw_networkx_edges(
                 G,
                 pos,
+                ax=ax_save,
+                edge_color="white",
+                width=0.6,
+                alpha=0.7
+            )
+
+            nx.draw_networkx_nodes(
+                G,
+                pos,
+                ax=ax_save,
                 node_color=[opinions[n] for n in G.nodes()],
                 cmap="coolwarm",
                 vmin=-1,
                 vmax=1,
-                node_size=50,
-                edge_color="lightgray",
-                width=0.4
+                node_size=50
             )
 
-            plt.title(f"Experiment 3 | Step {t} | Q = {Q:.3f} | r = {r:.3f}")
-            plt.axis("off")
+            ax_save.set_title(
+                f"Step {t} | Q={Q:.3f} | r={r:.3f}",
+                color="white"
+            )
 
-            plt.savefig(f"results/exp3_frames/frame_{t:04d}.png",
-                        bbox_inches="tight",
-                        dpi=150)
-            plt.close()
+            ax_save.set_axis_off()
 
-        pos = nx.spring_layout(G, pos=pos, iterations=3, seed=t)
-
-        nx.draw(
-            G,
-            pos,
-            node_color=[opinions[n] for n in G.nodes()],
-            cmap="coolwarm",
-            vmin=-1,
-            vmax=1,
-            node_size=50,
-            edge_color="lightgray",
-            width=0.4,
-            ax=ax
-        )
-
-        ax.set_title(f"Experiment 3 | Step {t} | Q = {Q:.3f} | r = {r:.3f}")
+            plt.savefig(
+                f"results/exp3_frames/frame_{t:04d}.png",
+                dpi=150,
+                facecolor="black",
+                bbox_inches="tight"
+            )
+            plt.close(fig_save)
 
     ani = animation.FuncAnimation(fig, update, frames=steps, interval=100)
 
-    ani.save("results/exp3_rewiring.gif", writer="pillow", fps=10)
+    ani.save(
+        "results/exp3_rewiring.gif",
+        writer="pillow",
+        fps=10,
+        savefig_kwargs={"facecolor": "black"}
+    )
+
     plt.close()
 
-    plt.figure(figsize=(7, 4))
+    # FINAL METRICS PLOT (IDENTICAL STYLE TO EXP 1/2)
+    fig2, ax2 = plt.subplots(figsize=(7, 4))
+    fig2.patch.set_facecolor("black")
+    ax2.set_facecolor("black")
 
-    plt.plot(t_values, Q_values, label="Q(t)")
-    plt.plot(t_values, r_values, label="r(t)")
+    ax2.plot(t_values, Q_values, label="Q(t)")
+    ax2.plot(t_values, r_values, label="r(t)")
 
-    plt.xlabel("Time step")
-    plt.ylabel("Value")
-    plt.title("Experiment 3")
-    plt.legend()
-    plt.grid(True)
+    ax2.set_xlabel("Time step", color="white")
+    ax2.set_ylabel("Value", color="white")
+    ax2.set_title("Experiment 3", color="white")
+
+    ax2.tick_params(colors="white")
+
+    ax2.legend()
+    ax2.grid(True)
 
     plt.tight_layout()
-    plt.savefig("results/exp3_Q_r.png", dpi=200)
+    plt.savefig("results/exp3_Q_r.png", dpi=200, facecolor="black")
     plt.show()
 
     print("Experiment 3 complete")
